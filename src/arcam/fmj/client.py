@@ -62,8 +62,8 @@ class ClientBase:
             else:
                 _LOGGER.debug("Sending ping")
                 try:
-                    await self.request(1, CommandCodes.POWER, bytes([0xF0]))
-                except (ArcamException, TimeoutError):
+                    await self.request(1, CommandCodes.HEARTBEAT, bytes([0xF0]))
+                except (ArcamException, TimeoutError) as exception:
                     _LOGGER.debug("Heartbeat failed")
                     return
                 self._timestamp = datetime.now()
