@@ -34,7 +34,6 @@ _REQUEST_TIMEOUT = timedelta(seconds=3)
 _REQUEST_THROTTLE = 0.2
 
 _HEARTBEAT_INTERVAL = timedelta(seconds=5)
-_HEARTBEAT_TIMEOUT = _HEARTBEAT_INTERVAL + _HEARTBEAT_INTERVAL
 
 
 class ClientBase:
@@ -62,20 +61,15 @@ class ClientBase:
             else:
                 _LOGGER.debug("Sending ping")
                 try:
-                    await self.request(1, CommandCodes.POWER, bytes([0xF0]))
-                except (ArcamException, TimeoutError):
+                    await self.request(1, CommandCodes.HEARTBEAT, bytes([0xF0]))
+                except (ArcamException, TimeoutError) as exception:
                     _LOGGER.debug("Heartbeat failed")
-                    return
+                    raise ConnectionFailed("Heartbeat failed") from exception
                 self._timestamp = datetime.now()
 
     async def _process_data(self, reader: StreamReader):
         while True:
-            try:
-                async with asyncio.timeout(_HEARTBEAT_TIMEOUT.total_seconds()):
-                    packet = await read_response(reader)
-            except TimeoutError as exception:
-                _LOGGER.debug("Missed all pings")
-                raise ConnectionFailed("Missed all pings") from exception
+            packet = await read_response(reader)
 
             if packet is None:
                 _LOGGER.debug("Server disconnected")

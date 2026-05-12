@@ -1,5 +1,5 @@
 [project]
-name = "arcam-fmj"
+name = "arcam-fmj-xr8s"
 version = "2.1.0"
 description = "A python library for speaking to Arcam receivers"
 readme = "README.rst"
