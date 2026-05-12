@@ -112,6 +112,7 @@ class NullPacket(ArcamException):
 
 
 APIVERSION_450_SERIES = {"AVR380", "AVR450", "AVR750"}
+APIVERSION_XR_SERIES = {"XR-4", "XR-4S", "XR-6", "XR-6S", "XR-8", "XR-8S"}
 APIVERSION_860_SERIES = {
     "AV860",
     "AVR850",
@@ -266,6 +267,7 @@ class ApiModel(enum.Enum):
     APIHDA_SERIES = 4
     APIPA_SERIES = 5
     APIST_SERIES = 6
+    APIXR_SERIES = 7
 
 
 _T = TypeVar("_T", bound="IntOrTypeEnum")
@@ -645,6 +647,7 @@ POWER_WRITE_SUPPORTED = {
     ApiModel.APISA_SERIES,
     ApiModel.APIPA_SERIES,
     ApiModel.APIST_SERIES,
+    ApiModel.APIXR_SERIES,
 }
 
 MUTE_WRITE_SUPPORTED = POWER_WRITE_SUPPORTED
