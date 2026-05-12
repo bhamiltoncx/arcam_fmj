@@ -36,6 +36,9 @@ _REQUEST_THROTTLE = 0.2
 _HEARTBEAT_INTERVAL = timedelta(seconds=5)
 _HEARTBEAT_TIMEOUT = _HEARTBEAT_INTERVAL + _HEARTBEAT_INTERVAL
 
+_RECONNECT_DELAY_START = timedelta(seconds=1)
+_RECONNECT_DELAY_MAX = timedelta(seconds=60)
+
 
 class ClientBase:
     def __init__(self) -> None:
@@ -89,19 +92,33 @@ class ClientBase:
         assert self._writer, "Writer missing"
         assert self._reader, "Reader missing"
 
-        reader = self._reader
-        writer = self._writer
+        reconnect_delay = _RECONNECT_DELAY_START
+        while True:
+            writer = self._writer
+            try:
+                async with asyncio.TaskGroup() as group:
+                    group.create_task(self._process_heartbeat())
+                    group.create_task(self._process_data(self._reader))
+            except BaseExceptionGroup as exc:
+                inner = exc.exceptions[0]
+                if not isinstance(inner, ConnectionFailed):
+                    raise copy(inner).with_traceback(inner.__traceback__)
+            finally:
+                writer.close()
+                self._writer = None
+                self._reader = None
 
-        try:
-            async with asyncio.TaskGroup() as group:
-                group.create_task(self._process_heartbeat())
-                group.create_task(self._process_data(reader))
-        except BaseExceptionGroup as exc:
-            # convert to a non group exception to keep compatibility
-            raise copy(exc.exceptions[0]).with_traceback(exc.exceptions[0].__traceback__)
-        finally:
-            _LOGGER.debug("Process task shutting down")
-            writer.close()
+            _LOGGER.info("Connection lost, reconnecting in %.1fs", reconnect_delay.total_seconds())
+            await asyncio.sleep(reconnect_delay.total_seconds())
+            reconnect_delay = min(reconnect_delay * 2, _RECONNECT_DELAY_MAX)
+
+            try:
+                await self.start()
+                _LOGGER.info("Reconnected to %s", self.peer)
+                reconnect_delay = _RECONNECT_DELAY_START
+                self._timestamp = datetime.now()
+            except OSError as exc:
+                raise ConnectionFailed("Reconnect failed") from exc
 
     @property
     def connected(self) -> bool:

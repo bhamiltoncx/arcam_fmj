@@ -61,6 +61,7 @@ async def speedy_client(mocker):
     mocker.patch("arcam.fmj.client._HEARTBEAT_INTERVAL", new=timedelta(seconds=1))
     mocker.patch("arcam.fmj.client._HEARTBEAT_TIMEOUT", new=timedelta(seconds=2))
     mocker.patch("arcam.fmj.client._REQUEST_TIMEOUT", new=timedelta(seconds=0.5))
+    mocker.patch("arcam.fmj.client._RECONNECT_DELAY_START", new=timedelta(seconds=0.1))
 
 
 async def test_power(server, client):
@@ -99,14 +100,50 @@ async def test_unsupported_zone(speedy_client, silent_server, client):
         await client.request(0x02, CommandCodes.DECODE_MODE_STATUS_2CH, bytes([0xF0]))
 
 
-async def test_silent_server_disconnect(speedy_client, silent_server):
+async def test_reconnect(speedy_client):
+    from arcam.fmj.client import _RECONNECT_DELAY_START
+
+    s = Server("localhost", 8888, "AVR450")
+    s.register_handler(0x01, CommandCodes.POWER, bytes([0xF0]), lambda **kwargs: bytes([0x00]))
+    c = Client("localhost", 8888)
+
+    async with ServerContext(s):
+        await c.start()
+        process_task = asyncio.create_task(c.process())
+        assert await c.request(0x01, CommandCodes.POWER, bytes([0xF0])) == bytes([0x00])
+
+    # Server stopped; restart immediately so the client can reconnect.
+    async with ServerContext(s):
+        await asyncio.sleep(_RECONNECT_DELAY_START.total_seconds() + 0.5)
+        assert not process_task.done(), "process() should still be running after reconnect"
+        assert await c.request(0x01, CommandCodes.POWER, bytes([0xF0])) == bytes([0x00])
+        process_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await process_task
+
+    await c.stop()
+
+
+async def test_silent_server_disconnect(speedy_client, silent_server, mocker):
     from arcam.fmj.client import _HEARTBEAT_TIMEOUT
 
     c = Client("localhost", 8888)
+    original_start = c.start
+    call_count = 0
+
+    async def fail_on_reconnect():
+        nonlocal call_count
+        call_count += 1
+        if call_count > 1:
+            raise OSError("Server gone")
+        await original_start()
+
+    mocker.patch.object(c, "start", side_effect=fail_on_reconnect)
+
     connected = True
     with pytest.raises(ConnectionFailed):
         async with ClientContext(c):
-            await asyncio.sleep(_HEARTBEAT_TIMEOUT.total_seconds() + 0.5)
+            await asyncio.sleep(_HEARTBEAT_TIMEOUT.total_seconds() + 1.0)
             connected = c.connected
     assert not connected
 
