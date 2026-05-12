@@ -5,7 +5,7 @@ from asyncio.streams import StreamReader, StreamWriter
 import logging
 from datetime import datetime, timedelta
 from arcam.fmj.priority_lock import PriorityLock
-from contextlib import AsyncExitStack, contextmanager, suppress
+from contextlib import contextmanager
 from typing import overload
 from collections.abc import Callable
 from copy import copy
@@ -131,17 +131,12 @@ class ClientBase:
                 if not (future.cancelled() or future.done()):
                     future.set_result(response)
 
-        async with AsyncExitStack() as stack:
-            await stack.enter_async_context(self._request_lock(priority))
+        async with self._request_lock(priority):
             async with asyncio.timeout(_REQUEST_TIMEOUT.total_seconds()):
                 with self.listen(listen):
                     _LOGGER.debug("Requesting %s", request)
                     await write_packet(writer, request)
                     self._timestamp = datetime.now()
-                    with suppress(TimeoutError):
-                        async with asyncio.timeout(_REQUEST_THROTTLE):
-                            return await asyncio.shield(future)
-                    await stack.aclose()
                     return await future
                     
     async def send(self, zn: int, cc: CommandCodes, data: bytes, priority: int = 0) -> None:
